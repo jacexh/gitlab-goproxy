@@ -1,18 +1,24 @@
 package gitlabgoproxy
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-jimu/components/sloghelper"
 	"github.com/goproxy/goproxy"
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/zip"
 )
 
 type (
@@ -80,21 +86,136 @@ func (gf *GitlabFetcher) Query(ctx context.Context, path, query string) (string,
 
 // Download ..
 func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (info, mod, zip io.ReadSeekCloser, err error) {
-	// if err := module.Check(path, version); err != nil {
-	// 	slog.Warn("bad path-version pair", slog.String("path", path), slog.String("version", version), slog.String("error", err.Error()))
-	// 	return nil, nil, nil, err
-	// }
-	// loc, err := gf.Extract(ctx, path, version)
-	// if err != nil {
-	// 	return nil, nil, nil, err
-	// }
+	if err = module.Check(path, version); err != nil {
+		slog.Warn("bad path-version pair", slog.String("path", path), slog.String("version", version), slog.String("error", err.Error()))
+		return nil, nil, nil, err
+	}
+	loc, err := gf.Extract(ctx, path, version)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
-	// // info
-	// tag, err := gf.gitlab.GetTag(ctx, loc.Repository, loc.Ref)
-	// if err != nil {
-	// 	return nil, nil, nil, err
-	// }
-	return nil, nil, nil, nil
+	var mu = &sync.Mutex{}
+
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		var errInfo error
+		info, errInfo = gf.SaveInfo(ctx, loc)
+		if errInfo != nil {
+			slog.Error(errInfo.Error())
+			mu.Lock()
+			defer mu.Unlock()
+			err = fmt.Errorf("save info error: %w", errInfo)
+			cancel()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		var errMod error
+		info, errMod = gf.SaveGoMod(ctx, loc)
+		if errMod != nil {
+			slog.Error(errMod.Error())
+			mu.Lock()
+			defer mu.Unlock()
+			err = fmt.Errorf("save go.mod error: %w", errMod)
+			cancel()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		var errZip error
+		zip, errZip = gf.Archive(ctx, loc, path, version)
+		if errZip != nil {
+			slog.Error(errZip.Error())
+			mu.Lock()
+			defer mu.Unlock()
+			err = fmt.Errorf("save archive file error: %w", errZip)
+			cancel()
+		}
+	}()
+
+	wg.Wait()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return
+}
+
+func (gf *GitlabFetcher) SaveInfo(ctx context.Context, loc *Locator) (io.ReadSeekCloser, error) {
+	info, err := gf.gitlab.GetTag(ctx, loc.Repository, loc.Ref)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		return nil, err
+	}
+	r, _, err := Save(ctx, bytes.NewReader(data))
+	return r, err
+}
+
+func (gf *GitlabFetcher) SaveGoMod(ctx context.Context, loc *Locator) (io.ReadSeekCloser, error) {
+	data, err := gf.gitlab.GetFile(ctx, loc.Repository, filepath.Join(loc.SubPath, "go.mod"), loc.Ref)
+	if err != nil {
+		return nil, err
+	}
+
+	r, _, err := Save(ctx, bytes.NewReader(data))
+	return r, err
+}
+
+func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, version string) (io.ReadSeekCloser, error) {
+	dir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+
+	reader, err := gh.gitlab.Download(ctx, loc.Repository, loc.SubPath, loc.Ref)
+	if err != nil {
+		return nil, err
+	}
+	filename := "archive.zip"
+	fp := filepath.Join(dir, filename)
+	f, err := os.Create(fp)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, reader)
+	if err != nil {
+		return nil, err
+	}
+	// 保存存档文件结束
+
+	// 解压缩到 workspace目录下
+	ws := filepath.Join(dir, "workspace")
+
+	depth := 0
+	if loc.SubPath != "" {
+		depth = strings.Count(loc.SubPath, "/") + 1
+	}
+	err = UnzipArchiveFromGitlab(ws, depth, fp)
+	if err != nil {
+		return nil, err
+	}
+
+	// x/mod再处理
+	sf, err := Create(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = zip.CreateFromDir(sf, module.Version{Path: path, Version: version}, ws); err != nil {
+		return nil, err
+	}
+	return sf, nil
 }
 
 func (gf *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Locator, error) {
@@ -164,8 +285,6 @@ func (gf *GitlabFetcher) List(ctx context.Context, path string) ([]string, error
 		return nil, err
 	}
 
-	slog.Info("list tags", slog.String("path", path), slog.String("repository", repo), slog.String("subpath", strings.Join(subs, "/")), slog.String("prefix", verPrefix))
-
 	prefixs := make([]string, 0)
 	switch {
 	case verPrefix != "" && len(subs) > 0:
@@ -188,7 +307,6 @@ func (gf *GitlabFetcher) List(ctx context.Context, path string) ([]string, error
 
 	ret := make([]string, 0)
 	for _, prefix := range prefixs {
-		slog.Info("fetch tag list", slog.String("repository", repo), slog.String("prefix", prefix))
 		tags, err := gf.gitlab.ListTags(ctx, repo, prefix)
 		if err != nil {
 			return nil, err

@@ -2,8 +2,12 @@ package gitlabgoproxy_test
 
 import (
 	"context"
+	"io"
+	"log"
 	"log/slog"
+	"strings"
 	"testing"
+	"time"
 
 	gitlabgoproxy "github.com/jacexh/gitlab-goproxy"
 	"github.com/stretchr/testify/assert"
@@ -76,4 +80,35 @@ func TestGitlabFetcher_List(t *testing.T) {
 	versions, err = fetcher.List(context.Background(), "gitlab.com/wongidle/mutiples/v2/internal/pkg/bytesconv")
 	slog.Info("unexpected versions", slog.Any("versions", versions))
 	assert.Error(t, err)
+}
+
+func TestGitlabFetcher_Download(t *testing.T) {
+	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, mod, _, err := fetcher.Download(ctx, "gitlab.com/wongidle/foobar", "v0.2.0")
+	assert.NoError(t, err)
+
+	data, err := io.ReadAll(mod)
+	assert.NoError(t, err)
+	slog.Info(string(data), slog.Int("lenght", len(data)))
+
+	// time.Sleep(30 * time.Second)
+}
+
+func TestGitlabFetcher_GoMode(t *testing.T) {
+	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	reader, err := fetcher.SaveGoMod(ctx, &gitlabgoproxy.Locator{Repository: "wongidle/foobar", Ref: "v0.2.0"})
+	assert.NoError(t, err)
+	data, err := io.ReadAll(reader)
+	assert.NoError(t, err)
+	log.Println(string(data))
+}
+
+func TestSplit(t *testing.T) {
+	p := ""
+	ps := strings.Split(p, "/")
+	log.Println(len(ps))
 }

@@ -95,9 +95,13 @@ func (gh *GitlabHost) GetFile(ctx context.Context, repo, path, ref string) ([]by
 
 func (gh *GitlabHost) Download(ctx context.Context, repo, dir, ref string) (io.Reader, error) {
 	format := "zip"
+	opt := &gitlab.ArchiveOptions{Format: &format, SHA: &ref}
+	if dir != "" {
+		opt.Path = &dir
+	}
 	data, _, err := gh.client.Repositories.Archive(
 		repo,
-		&gitlab.ArchiveOptions{Format: &format, Path: &dir, SHA: &ref},
+		opt,
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
