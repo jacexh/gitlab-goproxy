@@ -36,8 +36,5 @@
 	// "customizations": {},
 
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-	"remoteUser": "vscode",
-	"mounts": [
-		"source=/home/ubuntu/mutiples,target=/opt/src/mutiples,type=bind,consistency=cached"
-	]
+	"remoteUser": "vscode"
 }
