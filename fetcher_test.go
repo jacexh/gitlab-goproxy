@@ -2,6 +2,7 @@ package gitlabgoproxy_test
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	gitlabgoproxy "github.com/jacexh/gitlab-goproxy"
@@ -38,5 +39,41 @@ func TestGitlabFetcher_Extract(t *testing.T) {
 	_, err = fetcher.Extract(context.Background(), "gitlab.com/wongidle/mutiples/internal/pkg/bytesconv/v2", "v2.0.2")
 	assert.Error(t, err)
 	_, err = fetcher.Extract(context.Background(), "gitlab.com/wongidle/mutiples/v2/internal/pkg/bytesconv", "v2.0.2")
+	assert.Error(t, err)
+}
+
+func TestGitlabFetcher_List(t *testing.T) {
+	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"})
+
+	// simple
+	versions, err := fetcher.List(context.Background(), "gitlab.com/wongidle/foobar")
+	assert.NoError(t, err)
+	assert.EqualValues(t, versions, []string{"v0.1.0", "v0.1.1", "v0.2.0"})
+
+	// v1 sub module
+	versions, err = fetcher.List(context.Background(), "gitlab.com/wongidle/foobar/pkg")
+	assert.NoError(t, err)
+	assert.EqualValues(t, versions, []string{"v0.2.0", "v0.2.1"})
+
+	// bad module
+	_, err = fetcher.List(context.Background(), "gitlab.com/wongidle/foobar/internal/pkg")
+	assert.Error(t, err)
+
+	// v2
+	versions, err = fetcher.List(context.Background(), "gitlab.com/wongidle/mutiples/v2")
+	assert.NoError(t, err)
+	assert.EqualValues(t, versions, []string{"v2.0.1", "v2.0.2"})
+
+	// v2 submodule
+	versions, err = fetcher.List(context.Background(), "gitlab.com/wongidle/mutiples/pkg/str/v2")
+	assert.NoError(t, err)
+	assert.EqualValues(t, versions, []string{"v2.0.2"})
+
+	// v2 invalid
+	_, err = fetcher.List(context.Background(), "gitlab.com/wongidle/mutiples/internal/pkg/bytesconv/v2")
+	assert.Error(t, err)
+
+	versions, err = fetcher.List(context.Background(), "gitlab.com/wongidle/mutiples/v2/internal/pkg/bytesconv")
+	slog.Info("unexpected versions", slog.Any("versions", versions))
 	assert.Error(t, err)
 }

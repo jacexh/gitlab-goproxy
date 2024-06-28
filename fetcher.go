@@ -65,8 +65,12 @@ func (gf *GitlabFetcher) Query(ctx context.Context, path, query string) (string,
 		slog.Warn("bad path-query pair", slog.String("path", path), slog.String("query", query), slog.String("error", err.Error()))
 		return "", time.Time{}, err
 	}
+	loc, err := gf.Extract(ctx, path, query)
+	if err != nil {
+		return "", time.Time{}, err
+	}
 	slog.Info("fetch tag from remote host", slog.String("path", path), slog.String("query", query))
-	info, err := gf.gitlab.GetTag(ctx, path, query)
+	info, err := gf.gitlab.GetTag(ctx, loc.Repository, loc.Ref)
 	if err != nil {
 		slog.Warn("failed to get tag info from gitlab host", slog.String("project", path), slog.String("ref", query), sloghelper.Error(err))
 		return "", time.Time{}, err
@@ -74,20 +78,26 @@ func (gf *GitlabFetcher) Query(ctx context.Context, path, query string) (string,
 	return info.Version, info.Time, nil
 }
 
-func (fg *GitlabFetcher) List(ctx context.Context, path string) ([]string, error) {
-	slog.Info("calling List", slog.String("path", path))
-	return nil, nil
-}
+// Download ..
+func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (info, mod, zip io.ReadSeekCloser, err error) {
+	// if err := module.Check(path, version); err != nil {
+	// 	slog.Warn("bad path-version pair", slog.String("path", path), slog.String("version", version), slog.String("error", err.Error()))
+	// 	return nil, nil, nil, err
+	// }
+	// loc, err := gf.Extract(ctx, path, version)
+	// if err != nil {
+	// 	return nil, nil, nil, err
+	// }
 
-func (fg *GitlabFetcher) Download(ctx context.Context, path, version string) (info, mod, zip io.ReadSeekCloser, err error) {
-	if err := module.Check(path, version); err != nil {
-		slog.Warn("bad path-version pair", slog.String("path", path), slog.String("version", version), slog.String("error", err.Error()))
-		return nil, nil, nil, err
-	}
+	// // info
+	// tag, err := gf.gitlab.GetTag(ctx, loc.Repository, loc.Ref)
+	// if err != nil {
+	// 	return nil, nil, nil, err
+	// }
 	return nil, nil, nil, nil
 }
 
-func (fg *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Locator, error) {
+func (gf *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Locator, error) {
 	if err := module.Check(path, query); err != nil {
 		return nil, err
 	}
@@ -96,9 +106,9 @@ func (fg *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Loca
 	loc := &Locator{Ref: query}
 
 	tail := len(ps) - 1
-	for cursor := 2; cursor < len(ps); cursor++ {
+	for cursor := 2; cursor <= tail; cursor++ {
 		proj := strings.Join(ps[1:cursor+1], "/")
-		ok, err := fg.gitlab.IsProject(ctx, proj)
+		ok, err := gf.gitlab.IsProject(ctx, proj)
 		if err != nil {
 			return nil, err
 		}
@@ -108,23 +118,24 @@ func (fg *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Loca
 
 		// ["gitlab.com", "wongidle", "foobar", "pkg"]
 		loc.Repository = proj
+		if cursor == tail {
+			loc.Ref = query
+			return loc, nil
+		}
 		if cursor < tail {
-			// 此时必然包含子路径或v2以上版本，也可能同时满足
-			virtualVersion := ps[tail]
-			isV2 := matcher.MatchString(virtualVersion)
-			if isV2 {
+			if isV2 := matcher.MatchString(ps[tail]); isV2 {
 				tail--
 			}
-			// github.com/foo/bar/xxxx/yyy v1.0.0   invalid version
-			// github.com/foo/bar/v2 v2.0.0  foo/bar,  "", v2.0.0
-			// github.com/foo/bar/echo/world v1.0.0  echo/world/v1.0.0, world/v1.0.0
-			if tail > cursor {
+			if cursor < tail {
+				// github.com/foo/bar/xxxx/yyy v1.0.0   invalid version
+				// github.com/foo/bar/v2 v2.0.0  foo/bar,  "", v2.0.0
+				// github.com/foo/bar/echo/world v1.0.0  echo/world/v1.0.0, world/v1.0.0
 				dirs := ps[cursor+1 : tail+1]
 				// 从尾部开始递归
 				for index := len(dirs); index > 0; index-- {
 					subPath := strings.Join(dirs[0:index], "/")
 					ref := subPath + "/" + query
-					_, err = fg.gitlab.GetFile(ctx, loc.Repository, subPath+"/go.mod", ref)
+					_, err = gf.gitlab.GetFile(ctx, loc.Repository, subPath+"/go.mod", ref)
 					if err != nil {
 						slog.Warn("no go.mod founded in subpath", slog.String("project", loc.Repository),
 							slog.String("subpath", subPath), slog.String("version", ref), slog.String("error", err.Error()))
@@ -134,11 +145,103 @@ func (fg *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Loca
 					loc.Ref = ref
 					return loc, nil
 				}
-				// 运行到这里，只能是错误的模块路径了
 				return nil, errors.New("invalid module path")
 			}
 		}
 		return loc, nil
 	}
 	return nil, fmt.Errorf("cannot found gitlab project with path=%s  query=%s", path, query)
+}
+
+// List 通过Git Repository的Tag列表返回查询结果
+//
+//	gitlab/wongidle/foobar -> [v0.1.0, v0.1.1]
+//	gitlab/wongidle/foobar/internal -> error
+//	gitlab/wongidle/foobar/pkg -> [v0.2.0, v0.2.1] -> [pkg/v0.2.0, pkg/v0.2.1]
+func (gf *GitlabFetcher) List(ctx context.Context, path string) ([]string, error) {
+	repo, subs, verPrefix, err := gf.ExtractSubPath(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Info("list tags", slog.String("path", path), slog.String("repository", repo), slog.String("subpath", strings.Join(subs, "/")), slog.String("prefix", verPrefix))
+
+	prefixs := make([]string, 0)
+	switch {
+	case verPrefix != "" && len(subs) > 0:
+		// 尾部遍历
+		for tail := len(subs) - 1; tail >= 0; tail-- {
+			prefixs = append(prefixs, strings.Join(subs[:tail+1], "/")+"/"+verPrefix)
+		}
+
+	case verPrefix != "" && len(subs) == 0:
+		prefixs = append(prefixs, verPrefix)
+
+	case verPrefix == "" && len(subs) > 0:
+		for tail := len(subs) - 1; tail >= 0; tail-- {
+			prefixs = append(prefixs, strings.Join(subs[:tail+1], "/")+"/v")
+		}
+
+	case verPrefix == "" && len(subs) == 0:
+		prefixs = append(prefixs, "v0.", "v1.")
+	}
+
+	ret := make([]string, 0)
+	for _, prefix := range prefixs {
+		slog.Info("fetch tag list", slog.String("repository", repo), slog.String("prefix", prefix))
+		tags, err := gf.gitlab.ListTags(ctx, repo, prefix)
+		if err != nil {
+			return nil, err
+		}
+		if len(tags) == 0 {
+			continue
+		}
+
+		for _, tag := range tags {
+			ret = append(ret, tag.Version[strings.LastIndex(tag.Version, "/")+1:])
+		}
+		// 遍历v0. 继续v1.
+		if verPrefix == "" && len(subs) == 0 {
+			continue
+		}
+		return ret, nil
+	}
+	if len(ret) > 0 {
+		return ret, nil
+	}
+	return nil, errors.New("no matching versions")
+}
+
+func (gf *GitlabFetcher) ExtractSubPath(ctx context.Context, path string) (string, []string, string, error) {
+	verPrefix := ""
+
+	escaped, err := module.EscapePath(path)
+	if err != nil {
+		return "", nil, verPrefix, err
+	}
+	ps := strings.Split(escaped, "/")
+	tail := len(ps) - 1
+
+	for cursor := 2; cursor <= tail; cursor++ {
+		proj := strings.Join(ps[1:cursor+1], "/")
+		ok, err := gf.gitlab.IsProject(ctx, proj)
+		if err != nil {
+			return "", nil, verPrefix, err
+		}
+		if !ok {
+			continue
+		}
+
+		if cursor < tail {
+			if matcher.MatchString(ps[tail]) {
+				verPrefix = ps[tail]
+				tail--
+			}
+			if cursor < tail {
+				return proj, ps[cursor+1 : tail+1], verPrefix, nil
+			}
+		}
+		return proj, []string{}, verPrefix, nil
+	}
+	return "", nil, verPrefix, errors.New("no matching versions")
 }
