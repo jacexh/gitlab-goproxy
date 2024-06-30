@@ -67,6 +67,7 @@ func NewGitlabFetcher(conf GitlabFetcherConfig) goproxy.Fetcher {
 //   - good: wongidle/foobar | internal | internal/v0.1.1
 //   - bad: wongidle/foobar |
 func (gf *GitlabFetcher) Query(ctx context.Context, path, query string) (string, time.Time, error) {
+	slog.Info("calling Query function", slog.String("path", path), slog.String("query", query))
 	if err := module.Check(path, query); err != nil {
 		slog.Warn("bad path-query pair", slog.String("path", path), slog.String("query", query), slog.String("error", err.Error()))
 		return "", time.Time{}, err
@@ -86,6 +87,7 @@ func (gf *GitlabFetcher) Query(ctx context.Context, path, query string) (string,
 
 // Download ..
 func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (info, mod, zip io.ReadSeekCloser, err error) {
+	slog.Info("start to download", slog.String("path", path), slog.String("version", version))
 	if err = module.Check(path, version); err != nil {
 		slog.Warn("bad path-version pair", slog.String("path", path), slog.String("version", version), slog.String("error", err.Error()))
 		return nil, nil, nil, err
@@ -107,7 +109,6 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 		var errInfo error
 		info, errInfo = gf.SaveInfo(ctx, loc)
 		if errInfo != nil {
-			slog.Error(errInfo.Error())
 			mu.Lock()
 			defer mu.Unlock()
 			err = fmt.Errorf("save info error: %w", errInfo)
@@ -118,9 +119,8 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 	go func() {
 		defer wg.Done()
 		var errMod error
-		info, errMod = gf.SaveGoMod(ctx, loc)
+		mod, errMod = gf.SaveGoMod(ctx, loc)
 		if errMod != nil {
-			slog.Error(errMod.Error())
 			mu.Lock()
 			defer mu.Unlock()
 			err = fmt.Errorf("save go.mod error: %w", errMod)
@@ -133,7 +133,6 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 		var errZip error
 		zip, errZip = gf.Archive(ctx, loc, path, version)
 		if errZip != nil {
-			slog.Error(errZip.Error())
 			mu.Lock()
 			defer mu.Unlock()
 			err = fmt.Errorf("save archive file error: %w", errZip)
@@ -153,6 +152,10 @@ func (gf *GitlabFetcher) SaveInfo(ctx context.Context, loc *Locator) (io.ReadSee
 	if err != nil {
 		return nil, err
 	}
+	if loc.SubPath != "" {
+		info.Version = loc.Ref[strings.LastIndex(loc.Ref, "/")+1:]
+	}
+
 	data, err := json.Marshal(info)
 	if err != nil {
 		return nil, err
@@ -172,11 +175,11 @@ func (gf *GitlabFetcher) SaveGoMod(ctx context.Context, loc *Locator) (io.ReadSe
 }
 
 func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, version string) (io.ReadSeekCloser, error) {
-	dir, err := os.MkdirTemp("", "")
+	dir, err := os.MkdirTemp(os.TempDir(), "gitlab-*")
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
+	// defer os.RemoveAll(dir)
 
 	reader, err := gh.gitlab.Download(ctx, loc.Repository, loc.SubPath, loc.Ref)
 	if err != nil {
@@ -188,11 +191,12 @@ func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, versio
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 	_, err = io.Copy(f, reader)
 	if err != nil {
+		f.Close()
 		return nil, err
 	}
+	f.Close()
 	// 保存存档文件结束
 
 	// 解压缩到 workspace目录下
@@ -212,6 +216,7 @@ func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, versio
 	if err != nil {
 		return nil, err
 	}
+	slog.Info("output", slog.String("output", sf.Name()))
 	if err = zip.CreateFromDir(sf, module.Version{Path: path, Version: version}, ws); err != nil {
 		return nil, err
 	}
@@ -280,6 +285,7 @@ func (gf *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Loca
 //	gitlab/wongidle/foobar/internal -> error
 //	gitlab/wongidle/foobar/pkg -> [v0.2.0, v0.2.1] -> [pkg/v0.2.0, pkg/v0.2.1]
 func (gf *GitlabFetcher) List(ctx context.Context, path string) ([]string, error) {
+	slog.Info("calling List function", slog.String("path", path))
 	repo, subs, verPrefix, err := gf.ExtractSubPath(ctx, path)
 	if err != nil {
 		return nil, err

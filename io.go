@@ -7,13 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	az "archive/zip"
 )
 
 type SmartFile struct {
 	*os.File
-	Ctx context.Context
+	Ctx    context.Context
+	closed int32
 }
 
 var _ io.ReadSeekCloser = (*SmartFile)(nil)
@@ -51,7 +53,9 @@ func Create(ctx context.Context) (*SmartFile, error) {
 
 func (cf *SmartFile) Close() error {
 	defer func() {
-		os.Remove(cf.File.Name())
+		if atomic.CompareAndSwapInt32(&cf.closed, 0, 1) {
+			os.Remove(cf.File.Name())
+		}
 	}()
 	err := cf.File.Close()
 	return err
@@ -62,7 +66,7 @@ func (cf *SmartFile) run() {
 	select {
 	case <-cf.Ctx.Done():
 		cf.Close()
-		slog.Info("automatically deteled this file")
+		slog.Info("automatically deteled this file", slog.String("file", cf.Name()))
 	}
 }
 
@@ -102,7 +106,6 @@ func UnzipArchiveFromGitlab(workspace string, depth int, archive string) error {
 		if err != nil {
 			return err
 		}
-		slog.Info(file.FileInfo().Name())
 	}
 	return nil
 }
