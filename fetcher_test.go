@@ -12,7 +12,7 @@ import (
 )
 
 func TestGitlabFetcher_Extract(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
 	// simple
 	loc, err := fetcher.Extract(context.Background(), "gitlab.com/wongidle/foobar", "v0.2.0")
 	assert.NoError(t, err)
@@ -45,7 +45,7 @@ func TestGitlabFetcher_Extract(t *testing.T) {
 }
 
 func TestGitlabFetcher_List(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"})
+	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
 
 	// simple
 	versions, err := fetcher.List(context.Background(), "gitlab.com/wongidle/foobar")
@@ -81,7 +81,7 @@ func TestGitlabFetcher_List(t *testing.T) {
 }
 
 func TestGitlabFetcher_Download(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	info, mod, zip, err := fetcher.Download(ctx, "gitlab.com/wongidle/foobar", "v0.2.0")
@@ -94,7 +94,7 @@ func TestGitlabFetcher_Download(t *testing.T) {
 }
 
 func TestGitlabFetcher_Info(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -129,7 +129,7 @@ func TestGitlabFetcher_Info(t *testing.T) {
 }
 
 func TestGitlabFetcher_GoMode(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	reader, err := fetcher.SaveGoMod(ctx, &gitlabgoproxy.Locator{Repository: "wongidle/foobar", Ref: "v0.2.0"})

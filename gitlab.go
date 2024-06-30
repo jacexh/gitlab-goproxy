@@ -21,7 +21,7 @@ type GitlabHost struct {
 var _ GitLab = (*GitlabHost)(nil)
 
 func NewGitlabHost(conf GitlabFetcherConfig) *GitlabHost {
-	client, err := gitlab.NewClient("", gitlab.WithBaseURL(conf.BaseURL))
+	client, err := gitlab.NewClient("", gitlab.WithBaseURL(conf.Endpoint))
 	if err != nil {
 		panic(err)
 	}
@@ -85,7 +85,7 @@ func (gh *GitlabHost) GetTag(ctx context.Context, repo, tag string) (*Info, erro
 }
 
 func (gh *GitlabHost) GetFile(ctx context.Context, repo, path, ref string) ([]byte, error) {
-	endpoint := fmt.Sprintf("%s/projects/%s/repository/files/%s/raw", gh.conf.BaseURL, url.PathEscape(repo), url.PathEscape(path))
+	endpoint := fmt.Sprintf("%s/projects/%s/repository/files/%s/raw", gh.conf.Endpoint, url.PathEscape(repo), url.PathEscape(path))
 	res, data, err := gh.session.GetWithContext(ctx, endpoint, requests.Params{Query: requests.Any{"ref": ref}}, nil)
 	if err != nil {
 		return nil, err

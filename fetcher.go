@@ -24,12 +24,7 @@ import (
 type (
 	GitlabFetcher struct {
 		gitlab GitLab
-	}
-
-	GitlabFetcherConfig struct {
-		BaseURL     string
-		Mask        string
-		AccessToken string
+		config GitlabFetcherConfig
 	}
 
 	Info struct {
@@ -50,6 +45,26 @@ type (
 		Download(ctx context.Context, repository, dir, ref string) (io.Reader, error) // https://go.dev/ref/mod#zip-files, TODO: 主module的zip文件里不包含任何子module，子module的zip中只包含自身文件
 		IsProject(context.Context, string) (bool, error)
 	}
+
+	GitlabFetcherConfig struct {
+		Endpoint    string `json:"endpoint" yaml:"endpoint" toml:"endpoint"`
+		AccessToken string `json:"access_token" yaml:"access_token" toml:"access_token"`
+		Mask        string `json:"mask" yaml:"mask" toml:"mask"`
+	}
+
+	UpstreamConfig struct {
+		Proxy string `json:"proxy" yaml:"proxy" toml:"proxy"`
+	}
+
+	Config struct {
+		Masks    []GitlabFetcherConfig `json:"masks" yaml:"masks" toml:"masks"`
+		Upstream UpstreamConfig        `json:"upstream" yaml:"upstream" toml:"upstream"`
+	}
+
+	MixedFetcher struct {
+		Masks    []*GitlabFetcher
+		Upstream goproxy.Fetcher
+	}
 )
 
 var (
@@ -58,7 +73,7 @@ var (
 )
 
 func NewGitlabFetcher(conf GitlabFetcherConfig) goproxy.Fetcher {
-	return &GitlabFetcher{gitlab: NewGitlabHost(conf)}
+	return &GitlabFetcher{gitlab: NewGitlabHost(conf), config: conf}
 }
 
 // Query:
@@ -368,4 +383,47 @@ func (gf *GitlabFetcher) ExtractSubPath(ctx context.Context, path string) (strin
 		return proj, []string{}, verPrefix, nil
 	}
 	return "", nil, verPrefix, errors.New("no matching versions")
+}
+
+func (gf *GitlabFetcher) NeedFetch(path string) bool {
+	return strings.HasPrefix(path, gf.config.Mask)
+}
+
+func NewMixedFetcher(conf Config) *MixedFetcher {
+	mf := &MixedFetcher{}
+	mf.Upstream = &goproxy.GoFetcher{Env: []string{fmt.Sprintf("GOPROXY=%s,direct", conf.Upstream.Proxy)}}
+	for _, c := range conf.Masks {
+		mf.Masks = append(mf.Masks, NewGitlabFetcher(c).(*GitlabFetcher))
+	}
+	return mf
+}
+
+func (mf *MixedFetcher) Download(ctx context.Context, path string, version string) (io.ReadSeekCloser, io.ReadSeekCloser, io.ReadSeekCloser, error) {
+	for _, gf := range mf.Masks {
+		if gf.NeedFetch(path) {
+			return gf.Download(ctx, path, version)
+		}
+	}
+	slog.Info("redirect download request to upstrea proxy", slog.String("path", path), slog.String("version", version))
+	return mf.Upstream.Download(ctx, path, version)
+}
+
+func (mf *MixedFetcher) List(ctx context.Context, path string) ([]string, error) {
+	for _, gf := range mf.Masks {
+		if gf.NeedFetch(path) {
+			return gf.List(ctx, path)
+		}
+	}
+	slog.Info("redirect list request to upstrea proxy", slog.String("path", path))
+	return mf.Upstream.List(ctx, path)
+}
+
+func (mf *MixedFetcher) Query(ctx context.Context, path string, query string) (string, time.Time, error) {
+	for _, gf := range mf.Masks {
+		if gf.NeedFetch(path) {
+			return gf.Query(ctx, path, query)
+		}
+	}
+	slog.Info("redirect query request to upstrea proxy", slog.String("path", path), slog.String("query", query))
+	return mf.Upstream.Query(ctx, path, query)
 }

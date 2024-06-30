@@ -13,7 +13,7 @@ import (
 )
 
 func TestGitHost(t *testing.T) {
-	git := gitlabgoproxy.NewGitlabHost(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"})
+	git := gitlabgoproxy.NewGitlabHost(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
 	tags, err := git.ListTags(context.Background(), "WhyNotHugo/darkman", "v1")
 	assert.NoError(t, err)
 
@@ -30,14 +30,14 @@ func TestGitHost(t *testing.T) {
 }
 
 func TestGitHostIsProject(t *testing.T) {
-	git := gitlabgoproxy.NewGitlabHost(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"})
+	git := gitlabgoproxy.NewGitlabHost(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
 	exists, err := git.IsProject(context.Background(), "wongidle/mutiples")
 	assert.NoError(t, err)
 	log.Println(exists)
 }
 
 func TestDownload(t *testing.T) {
-	git := gitlabgoproxy.NewGitlabHost(gitlabgoproxy.GitlabFetcherConfig{BaseURL: "https://gitlab.com/api/v4"})
+	git := gitlabgoproxy.NewGitlabHost(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
