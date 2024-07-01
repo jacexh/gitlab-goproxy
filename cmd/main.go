@@ -28,10 +28,10 @@ func main() {
 
 	slog.Info("loaded configs", slog.Any("config", conf))
 
-	http.ListenAndServe("localhost:8080", &goproxy.Goproxy{
-		ProxiedSumDBs: []string{
-			"sum.golang.org https://goproxy.cn/sumdb/sum.golang.org", // 代理默认的校验和数据库
-		},
+	http.ListenAndServe(":8080", &goproxy.Goproxy{
+		// ProxiedSumDBs: []string{
+		// 	"sum.golang.org https://goproxy.cn/sumdb/sum.golang.org", // 代理默认的校验和数据库
+		// },
 		Fetcher: gp.NewMixedFetcher(conf),
 	})
 }
