@@ -21,7 +21,7 @@ type GitlabHost struct {
 var _ GitLab = (*GitlabHost)(nil)
 
 func NewGitlabHost(conf GitlabFetcherConfig) *GitlabHost {
-	client, err := gitlab.NewClient("", gitlab.WithBaseURL(conf.Endpoint))
+	client, err := gitlab.NewClient(conf.AccessToken, gitlab.WithBaseURL(conf.Endpoint))
 	if err != nil {
 		panic(err)
 	}
@@ -46,7 +46,7 @@ func (gh *GitlabHost) IsProject(ctx context.Context, repo string) (bool, error) 
 }
 
 func (gh *GitlabHost) ListTags(ctx context.Context, repo string, prefix string) ([]*Info, error) {
-	o := "version"
+	o := "name"
 	s := "asc"
 	pre := new(string)
 	if prefix != "" {
