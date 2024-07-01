@@ -65,8 +65,8 @@ func (cf *SmartFile) run() {
 	slog.Info("this file will be automatically cleaned up later.", slog.String("file", cf.Name()))
 	select {
 	case <-cf.Ctx.Done():
-		cf.Close()
 		slog.Info("automatically deteled this file", slog.String("file", cf.Name()))
+		cf.Close()
 	}
 }
 

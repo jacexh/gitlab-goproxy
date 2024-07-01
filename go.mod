@@ -9,6 +9,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/xanzy/go-gitlab v0.106.0
 	golang.org/x/mod v0.18.0
+	golang.org/x/sync v0.7.0
 )
 
 require (

@@ -12,13 +12,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-jimu/components/sloghelper"
 	"github.com/goproxy/goproxy"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/zip"
+	"golang.org/x/sync/errgroup"
 )
 
 type (
@@ -112,50 +112,40 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 		return nil, nil, nil, err
 	}
 
-	var mu = &sync.Mutex{}
+	ctx, cancel := context.WithCancel(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-
-	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() {
-		defer wg.Done()
+	g.Go(func() error {
 		var errInfo error
 		info, errInfo = gf.SaveInfo(ctx, loc)
 		if errInfo != nil {
-			mu.Lock()
-			defer mu.Unlock()
-			err = fmt.Errorf("save info error: %w", errInfo)
 			cancel()
 		}
-	}()
+		return errInfo
+	})
 
-	go func() {
-		defer wg.Done()
+	g.Go(func() error {
 		var errMod error
 		mod, errMod = gf.SaveGoMod(ctx, loc)
 		if errMod != nil {
-			mu.Lock()
-			defer mu.Unlock()
-			err = fmt.Errorf("save go.mod error: %w", errMod)
 			cancel()
 		}
-	}()
+		return errMod
+	})
 
-	go func() {
-		defer wg.Done()
+	g.Go(func() error {
 		var errZip error
 		zip, errZip = gf.Archive(ctx, loc, path, version)
 		if errZip != nil {
-			mu.Lock()
-			defer mu.Unlock()
-			err = fmt.Errorf("save archive file error: %w", errZip)
 			cancel()
 		}
-	}()
+		return errZip
+	})
 
-	wg.Wait()
+	if err = g.Wait(); err != nil {
+		cancel()
+	}
+
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -194,7 +184,7 @@ func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, versio
 	if err != nil {
 		return nil, err
 	}
-	// defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir)
 
 	reader, err := gh.gitlab.Download(ctx, loc.Repository, loc.SubPath, loc.Ref)
 	if err != nil {
