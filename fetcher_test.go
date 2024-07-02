@@ -83,7 +83,10 @@ func TestGitlabFetcher_List(t *testing.T) {
 func TestGitlabFetcher_Download(t *testing.T) {
 	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+	defer func() {
+		slog.Info("calling cancel")
+		cancel()
+	}()
 	info, mod, zip, err := fetcher.Download(ctx, "gitlab.com/wongidle/foobar", "v0.2.0")
 	assert.NoError(t, err)
 
@@ -91,6 +94,21 @@ func TestGitlabFetcher_Download(t *testing.T) {
 	assert.NotNil(t, mod)
 	assert.NotNil(t, zip)
 
+	data, err := io.ReadAll(info)
+	assert.NoError(t, err)
+	slog.Info(string(data))
+
+	slog.Info("readed info")
+	time.Sleep(1 * time.Second)
+
+	data, err = io.ReadAll(mod)
+	assert.NoError(t, err)
+	slog.Info(string(data))
+	slog.Info("readed go.mod")
+	time.Sleep(1 * time.Second)
+
+	_, err = io.ReadAll(zip)
+	assert.NoError(t, err)
 }
 
 func TestGitlabFetcher_Info(t *testing.T) {
