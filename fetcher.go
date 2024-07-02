@@ -112,12 +112,12 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 		return nil, nil, nil, err
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	g, ctx := errgroup.WithContext(ctx)
+	parent, cancel := context.WithCancel(ctx)
+	g, _ := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		var errInfo error
-		info, errInfo = gf.SaveInfo(ctx, loc)
+		info, errInfo = gf.SaveInfo(parent, loc)
 		if errInfo != nil {
 			cancel()
 		}
@@ -126,7 +126,7 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 
 	g.Go(func() error {
 		var errMod error
-		mod, errMod = gf.SaveGoMod(ctx, loc)
+		mod, errMod = gf.SaveGoMod(parent, loc)
 		if errMod != nil {
 			cancel()
 		}
@@ -135,7 +135,7 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 
 	g.Go(func() error {
 		var errZip error
-		zip, errZip = gf.Archive(ctx, loc, path, version)
+		zip, errZip = gf.Archive(parent, loc, path, version)
 		if errZip != nil {
 			cancel()
 		}
@@ -144,10 +144,6 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 
 	if err = g.Wait(); err != nil {
 		cancel()
-	}
-
-	if err != nil {
-		return nil, nil, nil, err
 	}
 	return
 }
@@ -221,7 +217,7 @@ func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, versio
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("output", slog.String("output", sf.Name()))
+	slog.Info("created archived file", slog.String("path", path), slog.String("version", version), slog.String("output", sf.Name()))
 	if err = zip.CreateFromDir(sf, module.Version{Path: path, Version: version}, ws); err != nil {
 		return nil, err
 	}
