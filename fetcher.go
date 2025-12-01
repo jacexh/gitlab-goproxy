@@ -377,7 +377,9 @@ func (gf *GitlabFetcher) NeedFetch(path string) bool {
 
 func NewMixedFetcher(conf Config) *MixedFetcher {
 	mf := &MixedFetcher{}
-	mf.Upstream = &goproxy.GoFetcher{Env: []string{fmt.Sprintf("GOPROXY=%s,direct", conf.Upstream.Proxy)}}
+	envs := os.Environ()
+	envs = append(envs, fmt.Sprintf("GOPROXY=%s,direct", conf.Upstream.Proxy))
+	mf.Upstream = &goproxy.GoFetcher{Env: envs}
 	for _, c := range conf.Masks {
 		mf.Masks = append(mf.Masks, NewGitlabFetcher(c).(*GitlabFetcher))
 	}
