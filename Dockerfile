@@ -16,8 +16,9 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifi
 COPY ./configs /app/configs
 RUN set -e \
     && apt update -yqq \
-    && apt install -y --no-install-recommends git git-lfs openssh gpg subversion fossil mercurial breezy \
-    && rm -rf /var/lib/apt/lists/*
+    && apt install -y --no-install-recommends git git-lfs gpg subversion fossil mercurial \
+    && git lfs install --system \
+    && rm -rf /var/lib/apt/lists/* 
 
 EXPOSE 8080
 CMD ["/app/gitlab-goproxy"]
