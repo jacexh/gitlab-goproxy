@@ -59,6 +59,7 @@ type (
 	Config struct {
 		Masks    []GitlabFetcherConfig `json:"masks" yaml:"masks" toml:"masks"`
 		Upstream UpstreamConfig        `json:"upstream" yaml:"upstream" toml:"upstream"`
+		S3       S3Config              `json:"s3" yaml:"s3" toml:"s3"`
 	}
 
 	MixedFetcher struct {
@@ -377,7 +378,9 @@ func (gf *GitlabFetcher) NeedFetch(path string) bool {
 
 func NewMixedFetcher(conf Config) *MixedFetcher {
 	mf := &MixedFetcher{}
-	mf.Upstream = &goproxy.GoFetcher{Env: []string{fmt.Sprintf("GOPROXY=%s,direct", conf.Upstream.Proxy)}}
+	envs := os.Environ()
+	envs = append(envs, fmt.Sprintf("GOPROXY=%s,direct", conf.Upstream.Proxy))
+	mf.Upstream = &goproxy.GoFetcher{Env: envs}
 	for _, c := range conf.Masks {
 		mf.Masks = append(mf.Masks, NewGitlabFetcher(c).(*GitlabFetcher))
 	}

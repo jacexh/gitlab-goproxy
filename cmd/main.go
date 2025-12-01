@@ -28,10 +28,16 @@ func main() {
 
 	slog.Info("loaded configs", slog.Any("config", conf))
 
+	cacher, err := gp.NewS3Cache(conf.S3)
+	if err != nil {
+		slog.Warn("failed to enable cacher", slog.String("error", err.Error()))
+	}
+
 	http.ListenAndServe(":8080", &goproxy.Goproxy{
 		// ProxiedSumDBs: []string{
 		// 	"sum.golang.org https://goproxy.cn/sumdb/sum.golang.org", // 代理默认的校验和数据库
 		// },
 		Fetcher: gp.NewMixedFetcher(conf),
+		Cacher:  cacher,
 	})
 }

@@ -63,11 +63,9 @@ func (cf *SmartFile) Close() error {
 
 func (cf *SmartFile) run() {
 	slog.Info("this file will be automatically cleaned up later.", slog.String("file", cf.Name()))
-	select {
-	case <-cf.Ctx.Done():
-		slog.Info("automatically deteled this file", slog.String("file", cf.Name()), slog.String("reason", cf.Ctx.Err().Error()))
-		cf.Close()
-	}
+	<-cf.Ctx.Done()
+	slog.Info("automatically deteled this file", slog.String("file", cf.Name()), slog.String("reason", cf.Ctx.Err().Error()))
+	cf.Close()
 }
 
 func UnzipArchiveFromGitlab(workspace string, depth int, archive string) error {
