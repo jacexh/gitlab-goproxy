@@ -4,9 +4,6 @@ on:
     branches:
     - master
     - main
-  push:
-    tags:
-    - "v*.*.*"
 
 jobs:
   unittest:
