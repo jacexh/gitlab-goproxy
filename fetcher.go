@@ -59,6 +59,7 @@ type (
 	Config struct {
 		Masks    []GitlabFetcherConfig `json:"masks" yaml:"masks" toml:"masks"`
 		Upstream UpstreamConfig        `json:"upstream" yaml:"upstream" toml:"upstream"`
+		S3       S3Config              `json:"s3" yaml:"s3" toml:"s3"`
 	}
 
 	MixedFetcher struct {
