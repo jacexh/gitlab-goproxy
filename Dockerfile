@@ -14,6 +14,10 @@ WORKDIR /app
 COPY --from=builder /go/src/gitlab-goproxy .
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY ./configs /app/configs
+RUN set -e \
+    && apt update -yqq \
+    && apt install -y --no-install-recommends git git-lfs openssh gpg subversion fossil mercurial breezy \
+    && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 8080
 CMD ["/app/gitlab-goproxy"]
