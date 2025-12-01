@@ -1,0 +1,37 @@
+name: Release CI
+on:
+  push:
+    branches:
+    - master
+jobs:
+  auto-tag:
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/master' }}
+    env:
+      COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: "0"
+    - name: Bump up version number
+      run: |
+        git config --global user.name "Github Action Bot"
+        git config --global user.email "vinea-dev@users.noreply.github.com"
+        type=patch
+        pattern="^Merge pull request #[0-9]+ from vinea-dev/release.*"
+        echo "commit message: $COMMIT_MESSAGE"
+        if [[ $COMMIT_MESSAGE =~ $pattern ]]; then
+          echo "bump up minor version number"
+          type=minor
+        fi
+        ./scripts/auto_bump_version.sh $type
+        git push origin master --follow-tags
+        echo "NEXT_TAG=$(git tag --points-at HEAD)" >> $GITHUB_ENV
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        draft: false
+        prerelease: false
+        tag_name: ${{ env.NEXT_TAG }}
+        generate_release_notes: true

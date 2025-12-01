@@ -4,3 +4,5 @@ upstream:
 masks:
 - endpoint: https://gitlab.com/api/v4
   mask: gitlab.com
+s3:
+  enable: false
