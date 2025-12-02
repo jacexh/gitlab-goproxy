@@ -12,7 +12,9 @@ import (
 )
 
 func TestGitlabFetcher_Extract(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	f, err := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
+	assert.NoError(t, err)
+	fetcher := f.(*gitlabgoproxy.GitlabFetcher)
 	// simple
 	loc, err := fetcher.Extract(context.Background(), "gitlab.com/wongidle/foobar", "v0.2.0")
 	assert.NoError(t, err)
@@ -45,7 +47,8 @@ func TestGitlabFetcher_Extract(t *testing.T) {
 }
 
 func TestGitlabFetcher_List(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
+	fetcher, err := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
+	assert.NoError(t, err)
 
 	// simple
 	versions, err := fetcher.List(context.Background(), "gitlab.com/wongidle/foobar")
@@ -81,7 +84,9 @@ func TestGitlabFetcher_List(t *testing.T) {
 }
 
 func TestGitlabFetcher_Download(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	f, err := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
+	assert.NoError(t, err)
+	fetcher := f.(*gitlabgoproxy.GitlabFetcher)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer func() {
 		slog.Info("calling cancel")
@@ -98,13 +103,13 @@ func TestGitlabFetcher_Download(t *testing.T) {
 	assert.NoError(t, err)
 	slog.Info(string(data))
 
-	slog.Info("readed info")
+	slog.Info("read info")
 	time.Sleep(1 * time.Second)
 
 	data, err = io.ReadAll(mod)
 	assert.NoError(t, err)
 	slog.Info(string(data))
-	slog.Info("readed go.mod")
+	slog.Info("read go.mod")
 	time.Sleep(1 * time.Second)
 
 	_, err = io.ReadAll(zip)
@@ -112,12 +117,14 @@ func TestGitlabFetcher_Download(t *testing.T) {
 }
 
 func TestGitlabFetcher_Info(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+	f, err := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
+	assert.NoError(t, err)
+	fetcher := f.(*gitlabgoproxy.GitlabFetcher)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	// v1
-	info, err := fetcher.SaveInfo(ctx, &gitlabgoproxy.Locator{Repository: "wongidle/foobar", Ref: "v0.2.0"})
+	info, err := fetcher.SaveInfo(ctx, ctx, &gitlabgoproxy.Locator{Repository: "wongidle/foobar", Ref: "v0.2.0"})
 	assert.NoError(t, err)
 
 	data, err := io.ReadAll(info)
@@ -125,32 +132,34 @@ func TestGitlabFetcher_Info(t *testing.T) {
 	assert.EqualValues(t, string(data), `{"Version":"v0.2.0","Time":"2024-06-28T17:04:20+08:00"}`)
 
 	// sub package
-	info, err = fetcher.SaveInfo(ctx, &gitlabgoproxy.Locator{Repository: "wongidle/foobar", SubPath: "pkg", Ref: "pkg/v0.2.0"})
+	info, err = fetcher.SaveInfo(ctx, ctx, &gitlabgoproxy.Locator{Repository: "wongidle/foobar", SubPath: "pkg", Ref: "pkg/v0.2.0"})
 	assert.NoError(t, err)
 	data, err = io.ReadAll(info)
 	assert.NoError(t, err)
 	assert.EqualValues(t, string(data), `{"Version":"v0.2.0","Time":"2024-06-28T17:04:20+08:00"}`)
 
 	// v2
-	info, err = fetcher.SaveInfo(ctx, &gitlabgoproxy.Locator{Repository: "wongidle/mutiples", SubPath: "", Ref: "v2.0.2"})
+	info, err = fetcher.SaveInfo(ctx, ctx, &gitlabgoproxy.Locator{Repository: "wongidle/mutiples", SubPath: "", Ref: "v2.0.2"})
 	assert.NoError(t, err)
 	data, err = io.ReadAll(info)
 	assert.NoError(t, err)
 	assert.EqualValues(t, string(data), `{"Version":"v2.0.2","Time":"2024-06-27T06:22:26Z"}`)
 
 	// v2 submodule
-	info, err = fetcher.SaveInfo(ctx, &gitlabgoproxy.Locator{Repository: "wongidle/mutiples", SubPath: "pkg/str", Ref: "pkg/str/v2.0.2"})
+	info, err = fetcher.SaveInfo(ctx, ctx, &gitlabgoproxy.Locator{Repository: "wongidle/mutiples", SubPath: "pkg/str", Ref: "pkg/str/v2.0.2"})
 	assert.NoError(t, err)
 	data, err = io.ReadAll(info)
 	assert.NoError(t, err)
 	assert.EqualValues(t, string(data), `{"Version":"v2.0.2","Time":"2024-06-27T06:22:26Z"}`)
 }
 
-func TestGitlabFetcher_GoMode(t *testing.T) {
-	fetcher := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"}).(*gitlabgoproxy.GitlabFetcher)
+func TestGitlabFetcher_GoMod(t *testing.T) {
+	f, err := gitlabgoproxy.NewGitlabFetcher(gitlabgoproxy.GitlabFetcherConfig{Endpoint: "https://gitlab.com/api/v4"})
+	assert.NoError(t, err)
+	fetcher := f.(*gitlabgoproxy.GitlabFetcher)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	reader, err := fetcher.SaveGoMod(ctx, &gitlabgoproxy.Locator{Repository: "wongidle/foobar", Ref: "v0.2.0"})
+	reader, err := fetcher.SaveGoMod(ctx, ctx, &gitlabgoproxy.Locator{Repository: "wongidle/foobar", Ref: "v0.2.0"})
 	assert.NoError(t, err)
 	data, err := io.ReadAll(reader)
 	assert.NoError(t, err)
