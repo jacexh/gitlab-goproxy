@@ -5,7 +5,6 @@ go 1.25
 require (
 	github.com/go-jimu/components v0.7.1
 	github.com/goproxy/goproxy v0.23.0
-	github.com/jacexh/requests v0.4.2
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/stretchr/testify v1.11.1
 	github.com/xanzy/go-gitlab v0.115.0

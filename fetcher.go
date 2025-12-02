@@ -42,7 +42,7 @@ type (
 		ListTags(ctx context.Context, repository string, prefix string) ([]*Info, error)
 		GetTag(ctx context.Context, repository, tag string) (*Info, error)
 		GetFile(ctx context.Context, repository, path, ref string) ([]byte, error)
-		Download(ctx context.Context, repository, dir, ref string) (io.Reader, error) // https://go.dev/ref/mod#zip-files, TODO: 主module的zip文件里不包含任何子module，子module的zip中只包含自身文件
+		Download(ctx context.Context, repository, dir, ref string) (io.Reader, error) // https://go.dev/ref/mod#zip-files, TODO: The zip file of the main module does not contain any submodules, and the zip file of the submodule only contains its own files
 		IsProject(context.Context, string) (bool, error)
 	}
 
@@ -73,8 +73,12 @@ var (
 	matcher                 = regexp.MustCompile(`^v[0-9]+$`)
 )
 
-func NewGitlabFetcher(conf GitlabFetcherConfig) goproxy.Fetcher {
-	return &GitlabFetcher{gitlab: NewGitlabHost(conf), config: conf}
+func NewGitlabFetcher(conf GitlabFetcherConfig) (goproxy.Fetcher, error) {
+	host, err := NewGitlabHost(conf)
+	if err != nil {
+		return nil, err
+	}
+	return &GitlabFetcher{gitlab: host, config: conf}, nil
 }
 
 // Query:
@@ -113,44 +117,34 @@ func (gf *GitlabFetcher) Download(ctx context.Context, path, version string) (in
 		return nil, nil, nil, err
 	}
 
-	parent, cancel := context.WithCancel(ctx)
-	g, _ := errgroup.WithContext(ctx)
+	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		var errInfo error
-		info, errInfo = gf.SaveInfo(parent, loc)
-		if errInfo != nil {
-			cancel()
-		}
+		info, errInfo = gf.SaveInfo(gCtx, ctx, loc)
 		return errInfo
 	})
 
 	g.Go(func() error {
 		var errMod error
-		mod, errMod = gf.SaveGoMod(parent, loc)
-		if errMod != nil {
-			cancel()
-		}
+		mod, errMod = gf.SaveGoMod(gCtx, ctx, loc)
 		return errMod
 	})
 
 	g.Go(func() error {
 		var errZip error
-		zip, errZip = gf.Archive(parent, loc, path, version)
-		if errZip != nil {
-			cancel()
-		}
+		zip, errZip = gf.Archive(gCtx, ctx, loc, path, version)
 		return errZip
 	})
 
 	if err = g.Wait(); err != nil {
-		cancel()
+		return
 	}
 	return
 }
 
-func (gf *GitlabFetcher) SaveInfo(ctx context.Context, loc *Locator) (io.ReadSeekCloser, error) {
-	info, err := gf.gitlab.GetTag(ctx, loc.Repository, loc.Ref)
+func (gf *GitlabFetcher) SaveInfo(fetchCtx, fileCtx context.Context, loc *Locator) (io.ReadSeekCloser, error) {
+	info, err := gf.gitlab.GetTag(fetchCtx, loc.Repository, loc.Ref)
 	if err != nil {
 		return nil, err
 	}
@@ -162,28 +156,28 @@ func (gf *GitlabFetcher) SaveInfo(ctx context.Context, loc *Locator) (io.ReadSee
 	if err != nil {
 		return nil, err
 	}
-	r, _, err := Save(ctx, bytes.NewReader(data))
+	r, _, err := Save(fileCtx, bytes.NewReader(data))
 	return r, err
 }
 
-func (gf *GitlabFetcher) SaveGoMod(ctx context.Context, loc *Locator) (io.ReadSeekCloser, error) {
-	data, err := gf.gitlab.GetFile(ctx, loc.Repository, filepath.Join(loc.SubPath, "go.mod"), loc.Ref)
+func (gf *GitlabFetcher) SaveGoMod(fetchCtx, fileCtx context.Context, loc *Locator) (io.ReadSeekCloser, error) {
+	data, err := gf.gitlab.GetFile(fetchCtx, loc.Repository, filepath.Join(loc.SubPath, "go.mod"), loc.Ref)
 	if err != nil {
 		return nil, err
 	}
 
-	r, _, err := Save(ctx, bytes.NewReader(data))
+	r, _, err := Save(fileCtx, bytes.NewReader(data))
 	return r, err
 }
 
-func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, version string) (io.ReadSeekCloser, error) {
+func (gf *GitlabFetcher) Archive(fetchCtx, fileCtx context.Context, loc *Locator, path, version string) (io.ReadSeekCloser, error) {
 	dir, err := os.MkdirTemp(os.TempDir(), "gitlab-*")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(dir)
 
-	reader, err := gh.gitlab.Download(ctx, loc.Repository, loc.SubPath, loc.Ref)
+	reader, err := gf.gitlab.Download(fetchCtx, loc.Repository, loc.SubPath, loc.Ref)
 	if err != nil {
 		return nil, err
 	}
@@ -199,9 +193,9 @@ func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, versio
 		return nil, err
 	}
 	f.Close()
-	// 保存存档文件结束
+	// Finished saving archive file
 
-	// 解压缩到 workspace目录下
+	// Unzip to the workspace directory
 	ws := filepath.Join(dir, "workspace")
 
 	depth := 0
@@ -213,8 +207,8 @@ func (gh *GitlabFetcher) Archive(ctx context.Context, loc *Locator, path, versio
 		return nil, err
 	}
 
-	// x/mod再处理
-	sf, err := Create(ctx)
+	// x/mod processing
+	sf, err := Create(fileCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +224,7 @@ func (gf *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Loca
 		return nil, err
 	}
 	ps := strings.Split(path, "/") // ["gitlab.com", "wongidle", "mutiples", "pkg", "srv", "v2"]
-	// 最简单的模式， host/group/proj  v0/1 版本，大多数情况
+	// Simplest mode, host/group/proj v0/1 version, most cases
 	loc := &Locator{Ref: query}
 
 	tail := len(ps) - 1
@@ -259,13 +253,13 @@ func (gf *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Loca
 				// github.com/foo/bar/v2 v2.0.0  foo/bar,  "", v2.0.0
 				// github.com/foo/bar/echo/world v1.0.0  echo/world/v1.0.0, world/v1.0.0
 				dirs := ps[cursor+1 : tail+1]
-				// 从尾部开始递归
+				// Recursion starts from the tail
 				for index := len(dirs); index > 0; index-- {
 					subPath := strings.Join(dirs[0:index], "/")
 					ref := subPath + "/" + query
 					_, err = gf.gitlab.GetFile(ctx, loc.Repository, subPath+"/go.mod", ref)
 					if err != nil {
-						slog.Warn("no go.mod founded in subpath", slog.String("project", loc.Repository),
+						slog.Warn("no go.mod found in subpath", slog.String("project", loc.Repository),
 							slog.String("subpath", subPath), slog.String("version", ref), slog.String("error", err.Error()))
 						continue
 					}
@@ -278,10 +272,10 @@ func (gf *GitlabFetcher) Extract(ctx context.Context, path, query string) (*Loca
 		}
 		return loc, nil
 	}
-	return nil, fmt.Errorf("cannot found gitlab project with path=%s  query=%s", path, query)
+	return nil, fmt.Errorf("cannot find gitlab project with path=%s  query=%s", path, query)
 }
 
-// List 通过Git Repository的Tag列表返回查询结果
+// List returns query results via Git Repository Tag list
 //
 //	gitlab/wongidle/foobar -> [v0.1.0, v0.1.1]
 //	gitlab/wongidle/foobar/internal -> error
@@ -296,7 +290,7 @@ func (gf *GitlabFetcher) List(ctx context.Context, path string) ([]string, error
 	prefixs := make([]string, 0)
 	switch {
 	case verPrefix != "" && len(subs) > 0:
-		// 尾部遍历
+		// Tail traversal
 		for tail := len(subs) - 1; tail >= 0; tail-- {
 			prefixs = append(prefixs, strings.Join(subs[:tail+1], "/")+"/"+verPrefix)
 		}
@@ -326,7 +320,7 @@ func (gf *GitlabFetcher) List(ctx context.Context, path string) ([]string, error
 		for _, tag := range tags {
 			ret = append(ret, tag.Version[strings.LastIndex(tag.Version, "/")+1:])
 		}
-		// 遍历v0. 继续v1.
+		// Traverse v0. Continue with v1.
 		if verPrefix == "" && len(subs) == 0 {
 			continue
 		}
@@ -376,15 +370,19 @@ func (gf *GitlabFetcher) NeedFetch(path string) bool {
 	return strings.HasPrefix(path, gf.config.Mask)
 }
 
-func NewMixedFetcher(conf Config) *MixedFetcher {
+func NewMixedFetcher(conf Config) (*MixedFetcher, error) {
 	mf := &MixedFetcher{}
 	envs := os.Environ()
 	envs = append(envs, fmt.Sprintf("GOPROXY=%s,direct", conf.Upstream.Proxy))
 	mf.Upstream = &goproxy.GoFetcher{Env: envs}
 	for _, c := range conf.Masks {
-		mf.Masks = append(mf.Masks, NewGitlabFetcher(c).(*GitlabFetcher))
+		f, err := NewGitlabFetcher(c)
+		if err != nil {
+			return nil, err
+		}
+		mf.Masks = append(mf.Masks, f.(*GitlabFetcher))
 	}
-	return mf
+	return mf, nil
 }
 
 func (mf *MixedFetcher) Download(ctx context.Context, path string, version string) (io.ReadSeekCloser, io.ReadSeekCloser, io.ReadSeekCloser, error) {
@@ -393,7 +391,7 @@ func (mf *MixedFetcher) Download(ctx context.Context, path string, version strin
 			return gf.Download(ctx, path, version)
 		}
 	}
-	slog.Info("redirect download request to upstrea proxy", slog.String("path", path), slog.String("version", version))
+	slog.Info("redirect download request to upstream proxy", slog.String("path", path), slog.String("version", version))
 	return mf.Upstream.Download(ctx, path, version)
 }
 
@@ -403,7 +401,7 @@ func (mf *MixedFetcher) List(ctx context.Context, path string) ([]string, error)
 			return gf.List(ctx, path)
 		}
 	}
-	slog.Info("redirect list request to upstrea proxy", slog.String("path", path))
+	slog.Info("redirect list request to upstream proxy", slog.String("path", path))
 	return mf.Upstream.List(ctx, path)
 }
 
@@ -413,6 +411,6 @@ func (mf *MixedFetcher) Query(ctx context.Context, path string, query string) (s
 			return gf.Query(ctx, path, query)
 		}
 	}
-	slog.Info("redirect query request to upstrea proxy", slog.String("path", path), slog.String("query", query))
+	slog.Info("redirect query request to upstream proxy", slog.String("path", path), slog.String("query", query))
 	return mf.Upstream.Query(ctx, path, query)
 }

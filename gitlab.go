@@ -3,34 +3,26 @@ package gitlabgoproxy
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 
-	"github.com/jacexh/requests"
 	"github.com/xanzy/go-gitlab"
 )
 
 type GitlabHost struct {
-	conf    GitlabFetcherConfig
-	client  *gitlab.Client
-	session *requests.Session
+	conf   GitlabFetcherConfig
+	client *gitlab.Client
 }
 
 var _ GitLab = (*GitlabHost)(nil)
 
-func NewGitlabHost(conf GitlabFetcherConfig) *GitlabHost {
+func NewGitlabHost(conf GitlabFetcherConfig) (*GitlabHost, error) {
 	client, err := gitlab.NewClient(conf.AccessToken, gitlab.WithBaseURL(conf.Endpoint))
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	session := requests.NewSession()
-	gh := &GitlabHost{client: client, session: session, conf: conf}
-	if gh.conf.AccessToken != "" {
-		session.Apply(requests.WithGlobalHeader(requests.Any{"PRIVATE-TOKEN": gh.conf.AccessToken}))
-	}
-	return gh
+	gh := &GitlabHost{client: client, conf: conf}
+	return gh, nil
 }
 
 func (gh *GitlabHost) IsProject(ctx context.Context, repo string) (bool, error) {
@@ -85,12 +77,9 @@ func (gh *GitlabHost) GetTag(ctx context.Context, repo, tag string) (*Info, erro
 }
 
 func (gh *GitlabHost) GetFile(ctx context.Context, repo, path, ref string) ([]byte, error) {
-	endpoint := fmt.Sprintf("%s/projects/%s/repository/files/%s/raw", gh.conf.Endpoint, url.PathEscape(repo), url.PathEscape(path))
-	res, data, err := gh.session.GetWithContext(ctx, endpoint, requests.Params{Query: requests.Any{"ref": ref}}, nil)
-	if err != nil {
-		return nil, err
-	}
-	return data, gitlab.CheckResponse(res)
+	opt := &gitlab.GetRawFileOptions{Ref: &ref}
+	data, _, err := gh.client.RepositoryFiles.GetRawFile(repo, path, opt, gitlab.WithContext(ctx))
+	return data, err
 }
 
 func (gh *GitlabHost) Download(ctx context.Context, repo, dir, ref string) (io.Reader, error) {

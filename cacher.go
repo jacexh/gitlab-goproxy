@@ -38,7 +38,7 @@ const partSize = uint64(100 << 20)
 
 func NewS3Cache(conf S3Config) (goproxy.Cacher, error) {
 	if !conf.Enable {
-		return nil, errors.New("unload cacher")
+		return nil, errors.New("cacher disabled")
 	}
 
 	opts := &minio.Options{

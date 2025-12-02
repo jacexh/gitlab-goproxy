@@ -64,7 +64,7 @@ func (cf *SmartFile) Close() error {
 func (cf *SmartFile) run() {
 	slog.Info("this file will be automatically cleaned up later.", slog.String("file", cf.Name()))
 	<-cf.Ctx.Done()
-	slog.Info("automatically deteled this file", slog.String("file", cf.Name()), slog.String("reason", cf.Ctx.Err().Error()))
+	slog.Info("automatically deleted this file", slog.String("file", cf.Name()), slog.String("reason", cf.Ctx.Err().Error()))
 	cf.Close()
 }
 
@@ -75,19 +75,35 @@ func UnzipArchiveFromGitlab(workspace string, depth int, archive string) error {
 	}
 	defer reader.Close()
 
+	segmentsToSkip := 1 + depth
+
 	for _, file := range reader.File {
-		ps := strings.Split(file.Name, "/")
-		if len(ps) < 1+depth {
+		relPath := file.Name
+		for i := 0; i < segmentsToSkip; i++ {
+			idx := strings.IndexByte(relPath, '/')
+			if idx == -1 {
+				relPath = ""
+				break
+			}
+			relPath = relPath[idx+1:]
+		}
+
+		if relPath == "" {
 			continue
 		}
-		fp := filepath.Join(workspace, strings.Join(strings.Split(file.Name, "/")[1+depth:], "/"))
-		if file.FileInfo().IsDir() {
-			err := os.MkdirAll(fp, os.ModePerm)
-			if err == nil {
-				continue
-			}
-			return err
+
+		fp := filepath.Join(workspace, relPath)
+		if !strings.HasPrefix(fp, filepath.Clean(workspace)+string(os.PathSeparator)) {
+			continue
 		}
+
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(fp, os.ModePerm); err != nil {
+				return err
+			}
+			continue
+		}
+
 		if err = os.MkdirAll(filepath.Dir(fp), os.ModePerm); err != nil {
 			return err
 		}
@@ -97,10 +113,12 @@ func UnzipArchiveFromGitlab(workspace string, depth int, archive string) error {
 		}
 		src, err := file.Open()
 		if err != nil {
+			dst.Close()
 			return err
 		}
 		_, err = io.Copy(dst, src)
 		src.Close()
+		dst.Close()
 		if err != nil {
 			return err
 		}
