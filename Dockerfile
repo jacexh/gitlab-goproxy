@@ -9,7 +9,7 @@ RUN set -e \
     && apt install -yqq ca-certificates
 # https://valyala.medium.com/stripping-dependency-bloat-in-victoriametrics-docker-image-983fb5912b0d
 
-FROM debian:bookworm
+FROM golang:1.25-bookworm
 WORKDIR /app
 COPY --from=builder /go/src/gitlab-goproxy .
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
