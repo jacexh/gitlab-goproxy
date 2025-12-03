@@ -6,7 +6,6 @@ require (
 	github.com/go-jimu/components v0.7.1
 	github.com/goproxy/goproxy v0.23.0
 	github.com/minio/minio-go/v7 v7.0.97
-	github.com/samber/oops v1.19.0
 	github.com/stretchr/testify v1.11.1
 	github.com/xanzy/go-gitlab v0.115.0
 	golang.org/x/mod v0.30.0
@@ -35,6 +34,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/samber/lo v1.51.0 // indirect
+	github.com/samber/oops v1.19.0 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
 	go.opentelemetry.io/otel v1.29.0 // indirect
 	go.opentelemetry.io/otel/trace v1.29.0 // indirect
