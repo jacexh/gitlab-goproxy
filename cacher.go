@@ -16,7 +16,6 @@ import (
 	"github.com/goproxy/goproxy"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/samber/oops"
 )
 
 type (
@@ -64,7 +63,7 @@ func NewS3Cache(conf S3Config) (goproxy.Cacher, error) {
 func (s3 *S3Cache) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	o, err := s3.client.GetObject(ctx, s3.bucket, name, minio.GetObjectOptions{})
 	if err != nil {
-		slog.Warn("cache missed", slog.String("name", name), slog.Any("error", oops.Wrap(err)))
+		slog.Warn("cache missed", slog.String("name", name), slog.String("error", err.Error()))
 		if minio.ToErrorResponse(err).StatusCode == http.StatusNotFound {
 			return nil, fs.ErrNotExist
 		}
@@ -72,7 +71,7 @@ func (s3 *S3Cache) Get(ctx context.Context, name string) (io.ReadCloser, error) 
 	}
 	oi, err := o.Stat()
 	if err != nil {
-		slog.Warn("failed to get object info", slog.String("name", name), slog.Any("error", oops.Wrap(err)))
+		slog.Warn("failed to get object info", slog.String("name", name), slog.String("error", err.Error()))
 		if minio.ToErrorResponse(err).StatusCode == http.StatusNotFound {
 			return nil, fs.ErrNotExist
 		}
@@ -86,11 +85,11 @@ func (s3 *S3Cache) Put(ctx context.Context, name string, content io.ReadSeeker) 
 	logger := slog.Default().With("name", name)
 	size, err := content.Seek(0, io.SeekEnd)
 	if err != nil {
-		logger.Warn("failed to seek file from tail", slog.Any("error", oops.Wrap(err)))
+		logger.Warn("failed to seek file from tail", slog.String("error", err.Error()))
 		return err
 	}
 	if _, err := content.Seek(0, io.SeekStart); err != nil {
-		logger.Warn("failed to seek file from head", slog.Any("error", oops.Wrap(err)))
+		logger.Warn("failed to seek file from head", slog.String("error", err.Error()))
 		return err
 	}
 
@@ -118,7 +117,7 @@ func (s3 *S3Cache) Put(ctx context.Context, name string, content io.ReadSeeker) 
 		SendContentMd5: true,
 	})
 	if err != nil {
-		logger.Warn("failed to put object", slog.Any("error", oops.Wrap(err)))
+		logger.Warn("failed to put object", slog.String("error", err.Error()))
 		return err
 	}
 	return err
