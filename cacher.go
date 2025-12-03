@@ -2,6 +2,7 @@ package gitlabgoproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"io/fs"
@@ -20,12 +21,13 @@ import (
 
 type (
 	S3Config struct {
-		AccessKeyID     string `json:"access_key_id" toml:"access_key_id" yaml:"access_key_id"`
-		SecretAccessKey string `json:"secret_access_key" toml:"secret_access_key" yaml:"secret_access_key"`
-		Endpoint        string `json:"endpoint" toml:"endpoint" yaml:"endpoint"`
-		DisableTLS      bool   `json:"disable_tls" toml:"disable_tls" yaml:"disable_tls"`
-		Bucket          string `json:"bucket" toml:"bucket" yaml:"bucket"`
-		Enable          bool   `json:"enable" toml:"enable" yaml:"enable"`
+		AccessKeyID        string `json:"access_key_id" toml:"access_key_id" yaml:"access_key_id"`
+		SecretAccessKey    string `json:"secret_access_key" toml:"secret_access_key" yaml:"secret_access_key"`
+		Endpoint           string `json:"endpoint" toml:"endpoint" yaml:"endpoint"`
+		DisableTLS         bool   `json:"disable_tls" toml:"disable_tls" yaml:"disable_tls"`
+		InsecureSkipVerify bool   `json:"insecure_skip_verify" toml:"insecure_skip_verify" yaml:"insecure_skip_verify"`
+		Bucket             string `json:"bucket" toml:"bucket" yaml:"bucket"`
+		Enable             bool   `json:"enable" toml:"enable" yaml:"enable"`
 	}
 
 	S3Cache struct {
@@ -42,11 +44,15 @@ func NewS3Cache(conf S3Config) (goproxy.Cacher, error) {
 	if !conf.Enable {
 		return nil, errors.New("cacher disabled")
 	}
-
 	opts := &minio.Options{
 		Creds:        credentials.NewStaticV4(conf.AccessKeyID, conf.SecretAccessKey, ""),
 		Secure:       !conf.DisableTLS,
 		BucketLookup: minio.BucketLookupPath,
+	}
+	if opts.Secure && conf.InsecureSkipVerify {
+		opts.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
 	}
 	client, err := minio.New(conf.Endpoint, opts)
 	if err != nil {
